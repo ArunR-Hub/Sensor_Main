@@ -215,7 +215,153 @@
 
 //------------------------------------------
 
-// //------------light sleep with loop--------------------
+// //------------light sleep with loop-----------------
+// #include <Wire.h>
+// #include <SPI.h>
+// #include <SD.h>
+// #include "I2Cdev.h"
+// #include "MPU6050.h"
+// #include "RTClib.h"
+// #include "WaterHeightLogger.h"
+// #include "LoRaSender.h"
+// #include "TdsReadings.h"
+// #include "BatteryReader.h"
+// #include "PhReadings.h"
+// #include "LoRaNeighbour.h"
+
+
+// int NODE_ID = 2;
+// File logFile;
+
+// #define SD_CS 4
+// #define SD_PWR_EN 25
+// #define RTC_INT_PIN 35  // RTC INT pin
+// #define uS_TO_S_FACTOR 1000000ULL
+
+// // === Configurable Job Times ===
+// const int readMinute1 = 15;
+// const int readMinute2 = 45;
+// const int sendMinute = 59;
+
+// MPU6050 mpu(0x69);
+// RTC_DS3231 rtc;
+// RTC_DATA_ATTR int lastExecutedMinute = -1;
+
+// void setup() {
+//   Serial.begin(115200);
+//   delay(1000);
+
+//   Wire.begin(21, 22);
+//   Wire.setClock(400000);
+
+//   if (!rtc.begin()) {
+//     Serial.println("❌ RTC not found!");
+//     while (true)
+//       ;
+//   }
+
+//   if (rtc.lostPower()) {
+//     Serial.println("⚠️ RTC lost power, resetting time");
+//     rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
+//   }
+//   //rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
+
+//   //listen for time synck from gateway
+//   listenForTimeSync();
+
+
+//   rtc.disable32K();
+//   rtc.clearAlarm(1);
+//   rtc.clearAlarm(2);
+//   rtc.writeSqwPinMode(DS3231_OFF);
+//   rtc.disableAlarm(2);
+//   pinMode(RTC_INT_PIN, INPUT_PULLUP);
+
+//   pinMode(SD_PWR_EN, OUTPUT);
+//   SPI.begin(18, 19, 23, SD_CS);
+
+//   if (esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_EXT0) {
+//     Serial.println("🌞 Woke from RTC alarm");
+//     rtc.clearAlarm(1);
+//   } else {
+//     Serial.println("🔁 Power-on or manual reset");
+//   }
+// }
+
+// void loop() {
+//   delay(1000);  // Ensure RTC time is updated after wakeup
+//   Serial.println("🔄 New cycle started");
+
+//   DateTime now = rtc.now();
+//   int minute = now.minute();
+//   Serial.print("🕒 Current Time: ");
+//   Serial.println(now.timestamp(DateTime::TIMESTAMP_TIME));
+
+//   float batteryVoltage = readBatteryVoltage();
+
+//   Serial.print("🕒 battery voltage is: ");
+//   Serial.println(batteryVoltage);
+
+//   if ((minute == readMinute1 || minute == readMinute2 || minute == sendMinute) && minute != lastExecutedMinute) {
+//     // === MOSFET ON ===
+//     digitalWrite(SD_PWR_EN, HIGH);
+//     Serial.println("🔌 MOSFET ON");
+//     delay(1000);
+
+//     SD.end();
+//     if (!SD.begin(SD_CS)) {
+//       Serial.println("❌ SD card init failed!");
+//     } else {
+//       Serial.println("✅ SD card ready");
+//     }
+
+//     if (minute == readMinute1 || minute == readMinute2) {
+//       Serial.println("📊 Running Job 1 (Sensor logging)");
+//       logWaterHeight();
+//       readAndLogTDS();
+//       updBATtoSDcard();
+//       PhReadings();
+//     } else if (minute == sendMinute) {
+//       Serial.println("📤 Running Job 2 (Transmit data)");
+//       transmitToGateway();
+//     }
+
+//     digitalWrite(SD_PWR_EN, LOW);
+//     Serial.println("⚡ MOSFET OFF");
+//     delay(500);
+
+//     lastExecutedMinute = minute;
+//   } else {
+//     Serial.println("⏭ No job scheduled at this minute or already executed");
+//   }
+
+//   DateTime nextAlarm;
+//   if (minute < readMinute1) {
+//     nextAlarm = DateTime(now.year(), now.month(), now.day(), now.hour(), readMinute1, 0);
+//   } else if (minute < readMinute2) {
+//     nextAlarm = DateTime(now.year(), now.month(), now.day(), now.hour(), readMinute2, 0);
+//   } else if (minute < sendMinute) {
+//     nextAlarm = DateTime(now.year(), now.month(), now.day(), now.hour(), sendMinute, 0);
+//   } else {
+//     nextAlarm = DateTime(now.year(), now.month(), now.day(), now.hour() + 1, readMinute1, 0);
+//   }
+
+//   if (!rtc.setAlarm1(nextAlarm, DS3231_A1_Minute)) {
+//     Serial.println("❌ Failed to set RTC alarm");
+//   } else {
+//     Serial.print("🔔 Next alarm set for: ");
+//     Serial.println(nextAlarm.timestamp(DateTime::TIMESTAMP_TIME));
+//   }
+
+//   esp_sleep_enable_ext0_wakeup(GPIO_NUM_35, 0);
+//   Serial.println("😴 Entering light sleep until RTC alarm...");
+//   delay(100);
+//   Serial.flush();
+//   esp_light_sleep_start();
+// }
+
+//------------------***************-- working-
+
 #include <Wire.h>
 #include <SPI.h>
 #include <SD.h>
@@ -227,8 +373,11 @@
 #include "TdsReadings.h"
 #include "BatteryReader.h"
 #include "PhReadings.h"
+#include "LoRaNeighbour.h"
 
-const int nodeID = 2;
+String  NODE_ID = "1";
+String GATEWAY_ID = "200";
+// int NODE_ID_INT = NODE_ID.toInt();
 File logFile;
 
 #define SD_CS 4
@@ -239,29 +388,43 @@ File logFile;
 // === Configurable Job Times ===
 const int readMinute1 = 15;
 const int readMinute2 = 45;
-const int sendMinute  = 59;
+const int sendMinute = 59;
+const int specialHour = 18;
+const int specialMinute = 30;
 
 MPU6050 mpu(0x69);
 RTC_DS3231 rtc;
 RTC_DATA_ATTR int lastExecutedMinute = -1;
+RTC_DATA_ATTR int lastExecutedHour = -1;
 
 void setup() {
   Serial.begin(115200);
   delay(1000);
+
 
   Wire.begin(21, 22);
   Wire.setClock(400000);
 
   if (!rtc.begin()) {
     Serial.println("❌ RTC not found!");
-    while (true);
+    while (true)
+      ;
   }
 
   if (rtc.lostPower()) {
     Serial.println("⚠️ RTC lost power, resetting time");
     rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
   }
+
+  delay(1000);
+
   //rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
+
+  // Time sync from gateway
+  listenForTimeSync();
+  delay(2000);
+  // Discover Sensor Nodes
+  LoraNodeDiscovery();
 
 
   rtc.disable32K();
@@ -283,16 +446,46 @@ void setup() {
 }
 
 void loop() {
-  delay(1000);  // Ensure RTC time is updated after wakeup
+  delay(1000);  // Ensure RTC time is updated
   Serial.println("🔄 New cycle started");
 
   DateTime now = rtc.now();
+  int hour = now.hour();
   int minute = now.minute();
+
   Serial.print("🕒 Current Time: ");
   Serial.println(now.timestamp(DateTime::TIMESTAMP_TIME));
 
+  float batteryVoltage = readBatteryVoltage();
+  Serial.print("🔋 Battery Voltage: ");
+  Serial.println(batteryVoltage);
+
+  // === 10:30 AM Daily Job ===
+  if (hour == specialHour && minute == specialMinute && (lastExecutedHour != hour || lastExecutedMinute != minute)) {
+
+    Serial.println("🛠️ Running Daily 10:30AM Task (evaluateLoRaNeighbours)");
+
+    digitalWrite(SD_PWR_EN, HIGH);
+    delay(1000);
+    SD.end();
+    if (!SD.begin(SD_CS)) {
+      Serial.println("❌ SD card init failed (10:30AM task)");
+    } else {
+      Serial.println("✅ SD card ready (10:30AM task)");
+    }
+
+    LoraNodeDiscovery();
+
+    digitalWrite(SD_PWR_EN, LOW);
+    delay(500);
+
+    lastExecutedHour = hour;
+    lastExecutedMinute = minute;
+  }
+
+  // === Sensor Logging and Data Transmission Jobs ===
   if ((minute == readMinute1 || minute == readMinute2 || minute == sendMinute) && minute != lastExecutedMinute) {
-    // === MOSFET ON ===
+
     digitalWrite(SD_PWR_EN, HIGH);
     Serial.println("🔌 MOSFET ON");
     delay(1000);
@@ -305,14 +498,15 @@ void loop() {
     }
 
     if (minute == readMinute1 || minute == readMinute2) {
-      Serial.println("📊 Running Job 1 (Sensor logging)");
+      Serial.println("📊 Running Sensor Logging");
       logWaterHeight();
       readAndLogTDS();
       updBATtoSDcard();
       PhReadings();
     } else if (minute == sendMinute) {
-      Serial.println("📤 Running Job 2 (Transmit data)");
-      transmitToGateway();
+      Serial.println("📤 Transmitting to Gateway");
+      //transmitToGateway();
+      LoraTXGateway();
     }
 
     digitalWrite(SD_PWR_EN, LOW);
@@ -320,19 +514,27 @@ void loop() {
     delay(500);
 
     lastExecutedMinute = minute;
+    lastExecutedHour = hour;
   } else {
     Serial.println("⏭ No job scheduled at this minute or already executed");
   }
 
+  // === Set Next Wakeup Alarm ===
   DateTime nextAlarm;
   if (minute < readMinute1) {
-    nextAlarm = DateTime(now.year(), now.month(), now.day(), now.hour(), readMinute1, 0);
+    nextAlarm = DateTime(now.year(), now.month(), now.day(), hour, readMinute1, 0);
   } else if (minute < readMinute2) {
-    nextAlarm = DateTime(now.year(), now.month(), now.day(), now.hour(), readMinute2, 0);
+    nextAlarm = DateTime(now.year(), now.month(), now.day(), hour, readMinute2, 0);
   } else if (minute < sendMinute) {
-    nextAlarm = DateTime(now.year(), now.month(), now.day(), now.hour(), sendMinute, 0);
+    nextAlarm = DateTime(now.year(), now.month(), now.day(), hour, sendMinute, 0);
   } else {
-    nextAlarm = DateTime(now.year(), now.month(), now.day(), now.hour() + 1, readMinute1, 0);
+    nextAlarm = DateTime(now.year(), now.month(), now.day(), hour + 1, readMinute1, 0);
+  }
+
+  // Prefer earlier 10:30AM alarm if still in future today
+  DateTime tenThirty = DateTime(now.year(), now.month(), now.day(), specialHour, specialMinute, 0);
+  if (tenThirty > now && tenThirty.unixtime() < nextAlarm.unixtime()) {
+    nextAlarm = tenThirty;
   }
 
   if (!rtc.setAlarm1(nextAlarm, DS3231_A1_Minute)) {
@@ -348,6 +550,31 @@ void loop() {
   Serial.flush();
   esp_light_sleep_start();
 }
+
+//------------------LORA SENDER-----
+
+// #include <SPI.h>
+// #include <LoRa.h>
+// #include <SD.h>
+// #include "LoRaSender.h"
+
+// String  NODE_ID = "2";
+// String GATEWAY_ID = "200";
+
+// void setup() {
+//   Serial.begin(115200);
+//   delay(1000);
+
+//   Serial.println("🚀 Starting test: transmitToGateway()");
+//   transmitToGateway();  // Send data from SD to Gateway
+//   Serial.println("✅ transmitToGateway() completed");
+// }
+
+// void loop() {
+//   // Do nothing; one-time test
+// }
+
+
 
 //------------check nebhour-------------
 //------------loranebhour
@@ -409,4 +636,139 @@ void loop() {
 //   Serial.print("🕒 Current Time: ");
 //   Serial.println(now.timestamp(DateTime::TIMESTAMP_TIME));
 //   delay(10000);
+// }
+
+// ////--------------------BATTERY TEST
+
+// //------------Light Sleep Test: Only updBATtoSDcard() --------------------
+// #include <Wire.h>
+// #include <SPI.h>
+// #include <SD.h>
+// #include "I2Cdev.h"
+// #include "MPU6050.h"
+// #include "RTClib.h"
+// #include "WaterHeightLogger.h"
+// #include "LoRaSender.h"
+// #include "TdsReadings.h"
+// #include "BatteryReader.h"
+// #include "PhReadings.h"
+
+// const int nodeID = 2;
+// File logFile;
+
+// #define SD_CS 4
+// #define SD_PWR_EN 25
+// #define RTC_INT_PIN 35  // RTC INT pin
+// #define uS_TO_S_FACTOR 1000000ULL
+
+// MPU6050 mpu(0x69);
+// RTC_DS3231 rtc;
+
+// void setup() {
+//   Serial.begin(115200);
+//   delay(1000);
+
+//   Wire.begin(21, 22);
+//   Wire.setClock(400000);
+
+//   if (!rtc.begin()) {
+//     Serial.println("❌ RTC not found!");
+//     while (true)
+//       ;
+//   }
+
+//   if (rtc.lostPower()) {
+//     Serial.println("⚠️ RTC lost power, resetting time");
+//     rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
+//   }
+
+//   rtc.disable32K();
+//   rtc.clearAlarm(1);
+//   rtc.clearAlarm(2);
+//   rtc.writeSqwPinMode(DS3231_OFF);
+//   rtc.disableAlarm(2);
+//   pinMode(RTC_INT_PIN, INPUT_PULLUP);
+
+//   pinMode(SD_PWR_EN, OUTPUT);
+//   SPI.begin(18, 19, 23, SD_CS);
+
+//   Serial.println("✅ Setup complete");
+// }
+
+// void loop() {
+//   Serial.println("🔄 Testing updBATtoSDcard()...");
+
+//   // === Power ON SD Card ===
+//   digitalWrite(SD_PWR_EN, HIGH);
+//   delay(3000);
+
+//   float batteryVoltage = readBatteryVoltage();
+
+//   Serial.print("🕒 battery voltage is: ");
+//   Serial.println(batteryVoltage);
+
+//   SPI.begin(18, 19, 23, SD_CS);
+//   SD.end();  // Reset before init
+//   if (!SD.begin(SD_CS)) {
+//     Serial.println("❌ SD card init failed!");
+//   } else {
+//     Serial.println("✅ SD card ready");
+//     updBATtoSDcard();  // 🟢 Only this function is tested
+//   }
+
+//   digitalWrite(SD_PWR_EN, LOW);
+//   Serial.println("⚡ MOSFET OFF");
+
+//   // Optional: Sleep or halt
+//   Serial.println("🔁 Sleeping again after test");
+//   delay(10000);  // Wait before next run
+// }
+
+
+//-------------------------------------------
+
+
+
+// #include <Wire.h>
+// #include <SPI.h>
+// #include <SD.h>
+// #include "I2Cdev.h"
+// #include "RTClib.h"
+// #include "LoRaSender.h"
+// #include "LoRaNeighbour.h"
+// String NODE_ID = "2";  // Gateway node ID
+// #define SD_CS 4
+// #define SD_PWR_EN 25
+// File logFile;
+
+// RTC_DS3231 rtc;
+
+// void setup() {
+//   Serial.begin(115200);
+//   delay(1000);
+
+//   Wire.begin(21, 22);
+//   rtc.begin();
+
+//   pinMode(SD_PWR_EN, OUTPUT);
+//   digitalWrite(SD_PWR_EN, HIGH);
+//   delay(200);
+//   SPI.begin(18, 19, 23, SD_CS);
+//   delay(1000);
+//   if (!SD.begin(SD_CS)) {
+//     Serial.println("❌ SD init failed");
+//     while (true) delay(1000);
+//   }
+//   Serial.println("✅ SD ready");
+//   // listenForTimeSync();
+//   // delay(1000);
+//   // LoraNodeDiscovery();
+//   // delay(10000);
+//   // transmitToGateway();
+
+//   LoraTXGateway();
+// }
+
+// void loop() {
+//   // Do nothing repeatedly
 // }

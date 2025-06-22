@@ -15,7 +15,9 @@
 
 extern File logFile;
 
-const int nodeID = 2;
+// const int nodeID = 2;
+
+extern String NODE_ID;
 int analogBuffer[SCOUNT];
 
 float getMedianVoltage(int *buffer, int len);
@@ -84,18 +86,9 @@ DateTime now = rtc.now();
   if (TDSreading >= 0) {
     logFile = SD.open("/Readings.json", FILE_APPEND);
     if (logFile) {
-      // logFile.print("{\"N\":");
-      // logFile.print(nodeID);
-      // logFile.print(", \"T\":\"");
-      // logFile.print(timestamp);
-      // logFile.print("\", \"TDS\":");
-      // logFile.print(TDSreading, 2);
-      // logFile.println("}");
-      // logFile.close();
-      // Serial.println("✅ Valid data logged to SD");
 
       logFile.print("{\"N\":");
-      logFile.print(nodeID);
+      logFile.print(NODE_ID);
       logFile.print(", \"D\":\"");
       logFile.print(dateStr);
       logFile.print("\", \"T\":\"");
